@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -41,6 +41,31 @@
 
       <!-- Products Grid -->
       <div id="productsContainer" class="products-grid"></div>
+
+      <!-- Product Description Modal -->
+      <div
+        id="productModal"
+        class="product-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalProductTitle"
+        aria-describedby="modalProductDescription"
+        hidden
+      >
+        <div class="product-modal-content">
+          <button
+            id="closeProductModal"
+            type="button"
+            class="close-modal-btn"
+            aria-label="Close product description"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+          <p id="modalProductBrand" class="modal-brand"></p>
+          <h3 id="modalProductTitle"></h3>
+          <p id="modalProductDescription" class="modal-description"></p>
+        </div>
+      </div>
 
       <!-- Selected Products -->
       <div class="selected-products">
@@ -85,8 +110,8 @@
       </footer>
     </div>
 
-    <!-- secrets.js can be removed when using Cloudflare Workers for API requests -->
-    <script src="secrets.js"></script>
+    <!-- sceret.js can be removed when using Cloudflare Workers for API requests -->
+    <script src="sceret.js"></script>
     <script src="script.js"></script>
   </body>
 </html>
