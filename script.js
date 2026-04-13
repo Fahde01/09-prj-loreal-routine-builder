@@ -2,6 +2,7 @@
 const categoryFilter = document.getElementById("categoryFilter");
 const productsContainer = document.getElementById("productsContainer");
 const selectedProductsList = document.getElementById("selectedProductsList");
+const clearSelectedBtn = document.getElementById("clearSelected");
 const generateRoutineBtn = document.getElementById("generateRoutine");
 const chatForm = document.getElementById("chatForm");
 const chatWindow = document.getElementById("chatWindow");
@@ -13,14 +14,42 @@ const modalProductDescription = document.getElementById(
   "modalProductDescription",
 );
 const closeProductModalBtn = document.getElementById("closeProductModal");
-const apiUrl = "https://api.openai.com/v1/chat/completions";
-const apiKey = window.OPENAI_API_KEY || "";
+const workerUrl = "https://bot-worker.ayofadeni.workers.dev/";
 
 /* Keep product data and selected products in memory */
 let allProducts = [];
 let currentCategoryProducts = [];
 const selectedProducts = [];
 const chatHistory = [];
+let routineGenerated = false;
+const SELECTED_PRODUCTS_STORAGE_KEY = "selectedProductIds";
+
+const ALLOWED_FOLLOW_UP_TOPICS = [
+  "routine",
+  "skin",
+  "skincare",
+  "cleanser",
+  "serum",
+  "moisturizer",
+  "sunscreen",
+  "spf",
+  "acne",
+  "hair",
+  "haircare",
+  "shampoo",
+  "conditioner",
+  "scalp",
+  "makeup",
+  "foundation",
+  "concealer",
+  "lip",
+  "fragrance",
+  "perfume",
+  "scent",
+  "beauty",
+  "product",
+  "products",
+];
 
 /* Show initial placeholder until user selects a category */
 productsContainer.innerHTML = `
@@ -120,6 +149,57 @@ function toggleProductSelection(productId) {
     selectedProducts.splice(selectedIndex, 1);
   }
 
+  saveSelectedProducts();
+  renderSelectedProducts();
+  displayProducts(currentCategoryProducts);
+}
+
+/* Save selected product IDs to localStorage */
+function saveSelectedProducts() {
+  try {
+    const selectedProductIds = selectedProducts.map((product) => product.id);
+    localStorage.setItem(
+      SELECTED_PRODUCTS_STORAGE_KEY,
+      JSON.stringify(selectedProductIds),
+    );
+  } catch (error) {
+    console.error("Could not save selected products:", error);
+  }
+}
+
+/* Restore selected products from localStorage */
+function restoreSelectedProducts(products) {
+  try {
+    const savedValue = localStorage.getItem(SELECTED_PRODUCTS_STORAGE_KEY);
+
+    if (!savedValue) {
+      return;
+    }
+
+    const savedProductIds = JSON.parse(savedValue);
+
+    if (!Array.isArray(savedProductIds)) {
+      return;
+    }
+
+    selectedProducts.length = 0;
+
+    savedProductIds.forEach((savedId) => {
+      const matchedProduct = products.find((product) => product.id === savedId);
+
+      if (matchedProduct) {
+        selectedProducts.push(matchedProduct);
+      }
+    });
+  } catch (error) {
+    console.error("Could not restore selected products:", error);
+  }
+}
+
+/* Clear all selected products from memory + localStorage */
+function clearSelectedProducts() {
+  selectedProducts.length = 0;
+  saveSelectedProducts();
   renderSelectedProducts();
   displayProducts(currentCategoryProducts);
 }
@@ -129,7 +209,16 @@ function renderSelectedProducts() {
   if (selectedProducts.length === 0) {
     selectedProductsList.innerHTML =
       '<p class="selected-empty">No products selected yet.</p>';
+
+    if (clearSelectedBtn) {
+      clearSelectedBtn.hidden = true;
+    }
+
     return;
+  }
+
+  if (clearSelectedBtn) {
+    clearSelectedBtn.hidden = false;
   }
 
   selectedProductsList.innerHTML = selectedProducts
@@ -156,6 +245,15 @@ function getSelectedProductData() {
   }));
 }
 
+/* Limit follow-up questions to routine + beauty-related topics */
+function isAllowedFollowUp(question) {
+  const normalizedQuestion = question.toLowerCase();
+
+  return ALLOWED_FOLLOW_UP_TOPICS.some((topic) =>
+    normalizedQuestion.includes(topic),
+  );
+}
+
 /* Add one message block to the chat UI */
 function addChatMessage(role, text) {
   const message = document.createElement("p");
@@ -168,13 +266,12 @@ function addChatMessage(role, text) {
   chatWindow.scrollTop = chatWindow.scrollHeight;
 }
 
-/* Send one request to OpenAI and return assistant text */
-async function requestOpenAI(messages) {
-  const response = await fetch(apiUrl, {
+/* Send one request to the Cloudflare Worker and return assistant text */
+async function requestWorker(messages) {
+  const response = await fetch(workerUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: "gpt-4o",
@@ -182,16 +279,35 @@ async function requestOpenAI(messages) {
     }),
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || "OpenAI request failed.");
+  const responseText = await response.text();
+  let data = {};
+
+  if (responseText) {
+    try {
+      data = JSON.parse(responseText);
+    } catch (error) {
+      throw new Error("Worker returned an invalid response.");
+    }
   }
 
-  const data = await response.json();
-  const assistantText = data.choices?.[0]?.message?.content;
+  if (!response.ok) {
+    throw new Error(
+      data.error?.message ||
+        data.error ||
+        data.message ||
+        "Worker request failed.",
+    );
+  }
+
+  const assistantText =
+    data.choices?.[0]?.message?.content ||
+    data.content ||
+    data.reply ||
+    data.message ||
+    data.response;
 
   if (!assistantText) {
-    throw new Error("No response returned from API.");
+    throw new Error("No response returned from the worker.");
   }
 
   return assistantText;
@@ -205,33 +321,32 @@ async function generateRoutine() {
     return;
   }
 
-  if (!apiKey) {
-    chatWindow.textContent =
-      "API key not found. Add OPENAI_API_KEY in sceret.js.";
-    return;
-  }
-
   const selectedProductData = getSelectedProductData();
   chatWindow.innerHTML = "";
+  routineGenerated = false;
   addChatMessage("assistant", "Generating your personalized routine...");
   generateRoutineBtn.disabled = true;
 
   try {
+    const routinePrompt = `Create a personalized routine from these selected products: ${JSON.stringify(selectedProductData)}. Explain order and when to use each product.`;
+
     const messages = [
       {
         role: "system",
         content:
-          "You are a helpful beauty advisor. Build a simple routine using only the products provided by the user.",
+          "You are a helpful beauty advisor. Build a simple routine using only the products provided by the user, then answer follow-up questions only about that routine and related beauty topics such as skincare, haircare, makeup, and fragrance.",
       },
       {
         role: "user",
-        content: `Create a personalized routine from these selected products: ${JSON.stringify(selectedProductData)}. Explain order and when to use each product.`,
+        content: routinePrompt,
       },
     ];
 
-    const routineText = await requestOpenAI(messages);
+    const routineText = await requestWorker(messages);
     chatHistory.length = 0;
+    chatHistory.push({ role: "user", content: routinePrompt });
     chatHistory.push({ role: "assistant", content: routineText });
+    routineGenerated = true;
 
     chatWindow.innerHTML = "";
     addChatMessage("assistant", routineText);
@@ -292,6 +407,11 @@ selectedProductsList.addEventListener("click", (e) => {
   toggleProductSelection(productId);
 });
 
+/* Clear all selected products */
+if (clearSelectedBtn) {
+  clearSelectedBtn.addEventListener("click", clearSelectedProducts);
+}
+
 /* Generate a routine when the user clicks the button */
 if (generateRoutineBtn) {
   generateRoutineBtn.addEventListener("click", generateRoutine);
@@ -316,25 +436,23 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-/* Initialize selected list with empty state */
-renderSelectedProducts();
+/* Initialize selected list from localStorage */
+async function initializeSelectedProducts() {
+  const products = await loadProducts();
+  restoreSelectedProducts(products);
+  renderSelectedProducts();
+}
+
+initializeSelectedProducts();
 
 /* Chat form submission handler for follow-up questions */
 chatForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  if (!apiKey) {
+  if (!routineGenerated) {
     addChatMessage(
       "assistant",
-      "API key not found. Add OPENAI_API_KEY in sceret.js.",
-    );
-    return;
-  }
-
-  if (selectedProducts.length === 0) {
-    addChatMessage(
-      "assistant",
-      "Select at least one product before asking questions.",
+      "Generate a routine first, then ask follow-up questions about that routine.",
     );
     return;
   }
@@ -342,6 +460,14 @@ chatForm.addEventListener("submit", async (e) => {
   const question = userInput.value.trim();
 
   if (!question) {
+    return;
+  }
+
+  if (!isAllowedFollowUp(question)) {
+    addChatMessage(
+      "assistant",
+      "Please ask about your routine or related topics like skincare, haircare, makeup, or fragrance.",
+    );
     return;
   }
 
@@ -355,7 +481,7 @@ chatForm.addEventListener("submit", async (e) => {
       {
         role: "system",
         content:
-          "You are a helpful beauty advisor. Only recommend products from the list the user selected.",
+          "You are a helpful beauty advisor. Use the full conversation history. Only answer questions about the generated routine or related topics like skincare, haircare, makeup, and fragrance. If a question is outside these topics, politely refuse and ask the user to stay on-topic.",
       },
       {
         role: "user",
@@ -368,7 +494,7 @@ chatForm.addEventListener("submit", async (e) => {
       },
     ];
 
-    const assistantReply = await requestOpenAI(messages);
+    const assistantReply = await requestWorker(messages);
     chatHistory.push({ role: "user", content: question });
     chatHistory.push({ role: "assistant", content: assistantReply });
     addChatMessage("assistant", assistantReply);

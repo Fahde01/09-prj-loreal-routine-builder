@@ -71,6 +71,9 @@
       <div class="selected-products">
         <h2>Selected Products</h2>
         <div id="selectedProductsList"></div>
+        <button id="clearSelected" type="button" class="clear-btn" hidden>
+          Clear All
+        </button>
         <button id="generateRoutine" class="generate-btn">
           <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Routine
         </button>
@@ -110,8 +113,6 @@
       </footer>
     </div>
 
-    <!-- sceret.js can be removed when using Cloudflare Workers for API requests -->
-    <script src="sceret.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

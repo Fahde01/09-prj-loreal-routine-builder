@@ -393,6 +393,23 @@ body.modal-open {
   background: #555;
 }
 
+.clear-btn {
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #000;
+  background: #fff;
+  border: 2px solid #000;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.clear-btn:hover {
+  background: #f2f2f2;
+}
+
 .generate-btn {
   width: 100%;
   margin-top: 20px;
