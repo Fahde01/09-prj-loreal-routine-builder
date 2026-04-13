@@ -1,5 +1,6 @@
 /* Get references to DOM elements */
 const categoryFilter = document.getElementById("categoryFilter");
+const productSearch = document.getElementById("productSearch");
 const productsContainer = document.getElementById("productsContainer");
 const selectedProductsList = document.getElementById("selectedProductsList");
 const clearSelectedBtn = document.getElementById("clearSelected");
@@ -19,6 +20,8 @@ const workerUrl = "https://bot-worker.ayofadeni.workers.dev/";
 /* Keep product data and selected products in memory */
 let allProducts = [];
 let currentCategoryProducts = [];
+let selectedCategory = "";
+let searchQuery = "";
 const selectedProducts = [];
 const chatHistory = [];
 let routineGenerated = false;
@@ -57,6 +60,30 @@ productsContainer.innerHTML = `
     Select a category to view products
   </div>
 `;
+
+/* Filter products by category and search text */
+function getFilteredProducts() {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  return allProducts.filter((product) => {
+    const matchesCategory =
+      !selectedCategory || product.category === selectedCategory;
+
+    const searchableText = [
+      product.name,
+      product.brand,
+      product.category,
+      product.description,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    const matchesSearch =
+      !normalizedQuery || searchableText.includes(normalizedQuery);
+
+    return matchesCategory && matchesSearch;
+  });
+}
 
 /* Load product data from JSON file */
 async function loadProducts() {
@@ -99,6 +126,35 @@ function displayProducts(products) {
   `,
     )
     .join("");
+}
+
+/* Render the currently selected category and search results */
+async function renderFilteredProducts() {
+  await loadProducts();
+
+  const filteredProducts = getFilteredProducts();
+
+  if (filteredProducts.length === 0) {
+    if (selectedCategory || searchQuery.trim()) {
+      productsContainer.innerHTML = `
+        <div class="placeholder-message">
+          No products match your search.
+        </div>
+      `;
+      currentCategoryProducts = [];
+      return;
+    }
+
+    productsContainer.innerHTML = `
+      <div class="placeholder-message">
+        Select a category to view products
+      </div>
+    `;
+    currentCategoryProducts = [];
+    return;
+  }
+
+  displayProducts(filteredProducts);
 }
 
 /* Open the modal and show product details */
@@ -151,7 +207,7 @@ function toggleProductSelection(productId) {
 
   saveSelectedProducts();
   renderSelectedProducts();
-  displayProducts(currentCategoryProducts);
+  renderFilteredProducts();
 }
 
 /* Save selected product IDs to localStorage */
@@ -201,7 +257,7 @@ function clearSelectedProducts() {
   selectedProducts.length = 0;
   saveSelectedProducts();
   renderSelectedProducts();
-  displayProducts(currentCategoryProducts);
+  renderFilteredProducts();
 }
 
 /* Build the Selected Products section */
@@ -363,17 +419,20 @@ async function generateRoutine() {
 
 /* Filter and display products when category changes */
 categoryFilter.addEventListener("change", async (e) => {
-  const products = await loadProducts();
-  const selectedCategory = e.target.value;
+  selectedCategory = e.target.value;
 
   /* filter() creates a new array containing only products 
      where the category matches what the user selected */
-  const filteredProducts = products.filter(
-    (product) => product.category === selectedCategory,
-  );
-
-  displayProducts(filteredProducts);
+  await renderFilteredProducts();
 });
+
+/* Let users search by name, brand, category, or keyword */
+if (productSearch) {
+  productSearch.addEventListener("input", async (e) => {
+    searchQuery = e.target.value;
+    await renderFilteredProducts();
+  });
+}
 
 /* Let users click a product card to select or unselect it */
 productsContainer.addEventListener("click", (e) => {

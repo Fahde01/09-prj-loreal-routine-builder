@@ -40,8 +40,11 @@ body {
 .search-section {
   margin: 30px 0;
   display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
+.search-section input,
 .search-section select {
   width: 100%;
   padding: 16px;
@@ -53,6 +56,7 @@ body {
   font-weight: 500;
 }
 
+.search-section input:focus,
 .search-section select:focus {
   outline: none;
   border-color: #666;
